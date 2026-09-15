@@ -68,7 +68,10 @@ pub fn resolve_crop(crop: [[i64; 2]; 2], img_w: u32, img_h: u32) -> ActResult<Cr
 /// bare crop (557px long edge) does not decode; upscaling the same crop to
 /// an 800px long edge does. The root cause is pixels-per-module, not frame
 /// size, so 1024 gives margin over the measured 800px threshold rather than
-/// sitting right at it.
+/// sitting right at it. This is not an edge case: across a batch of real
+/// conference-badge photos, every QR that decoded occupied only 235-423px on
+/// the long edge — well below 557 — so the auto-upscale is not a nicety, it
+/// is what makes `crop` decode this kind of input at all.
 const UPSCALE_TARGET: u32 = 1024;
 const UPSCALE_MAX_FACTOR: u32 = 4;
 const UPSCALE_MAX_EDGE: u32 = 4096;

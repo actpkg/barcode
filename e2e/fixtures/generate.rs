@@ -14,6 +14,12 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 //! covered by the generate -> decode round-trip test, which needs no fixture.
 //! `multi.png` additionally covers the multi-barcode case: two symbologies
 //! composited onto one canvas.
+//!
+//! `upce.png` uses 255x150, not the 300x150 used for the other 1D fixtures:
+//! at 300x150 rxing's own decoder fails to read back a UPC-E it just wrote
+//! (`NotFoundException`), an aliasing artifact of that exact aspect ratio
+//! against UPC-E's much narrower 51-module symbol (vs EAN-13's 95).
+//! 255x150, 400x200 and 153x80 all decode correctly; measured, not guessed.
 
 use image::{GenericImage, GrayImage, Luma};
 use rxing::{BarcodeFormat, MultiFormatWriter, Writer};
@@ -26,6 +32,8 @@ fn main() {
         ("pdf417", BarcodeFormat::PDF_417, "ACT PDF417 payload", 400, 200),
         ("aztec", BarcodeFormat::AZTEC, "ACT Aztec payload", 300, 300),
         ("datamatrix", BarcodeFormat::DATA_MATRIX, "ACT DataMatrix payload", 300, 300),
+        // See the module doc comment for why this is 255x150, not 300x150.
+        ("upce", BarcodeFormat::UPC_E, "04252614", 255, 150),
     ];
     let writer = MultiFormatWriter;
 

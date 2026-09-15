@@ -38,6 +38,7 @@ def _results(payload):
         ("aztec.png", "AZTEC", "ACT Aztec payload"),
         ("datamatrix.png", "DATA_MATRIX", "ACT DataMatrix payload"),
         ("code128.png", "CODE_128", "ACT-CODE-128"),
+        ("upce.png", "UPC_E", "04252614"),
     ],
 )
 async def test_decodes_each_symbology(client, fixture, fmt, text):
@@ -70,6 +71,16 @@ async def test_two_d_formats_have_no_gtin(client):
     res = await client.call_tool("decode", {"data": _b(data)})
     r = _results(res.content)["results"][0]
     assert "gtin" not in r
+
+
+async def test_upce_expands_to_gtin_not_zero_padded(client):
+    # A real Procter & Gamble code. Zero-padding this 8-digit UPC-E would
+    # give 00000004252614 -- a different product's GTIN (see src/gtin.rs).
+    data = (FIXTURES / "upce.png").read_bytes()
+    res = await client.call_tool("decode", {"data": _b(data)})
+    r = _results(res.content)["results"][0]
+    assert r["gtin"] == "00042100005264"
+    assert r["check_digit_valid"] is True
 
 
 async def test_multiple_barcodes_are_all_returned(client):
