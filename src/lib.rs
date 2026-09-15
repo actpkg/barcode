@@ -34,11 +34,32 @@ pub struct Corner {
     pub y: f32,
 }
 
-/// Decode every barcode in an already-read image.
-pub fn decode_bytes(bytes: &[u8]) -> ActResult<DecodeOutput> {
+/// Decode every barcode in an already-read image, optionally restricted to a
+/// `[[x1,y1],[x2,y2]]` pixel region. A small cropped region is upscaled
+/// before decoding — see [`source::upscale_target`] for why a bare crop is
+/// not enough on its own.
+pub fn decode_bytes(bytes: &[u8], crop: Option<[[i64; 2]; 2]>) -> ActResult<DecodeOutput> {
     let img = image::load_from_memory(bytes)
         .map_err(|e| ActError::invalid_args(format!("Cannot decode image: {e}")))?;
-    let luma = img.to_luma8();
+
+    let mut luma = img.to_luma8();
+
+    if let Some(crop) = crop {
+        let (img_w, img_h) = luma.dimensions();
+        let (x, y, width, height) = source::resolve_crop(crop, img_w, img_h)?;
+        luma = image::imageops::crop_imm(&luma, x, y, width, height).to_image();
+
+        // A bare crop is often not enough: rxing's binariser needs enough
+        // pixels per module, and a small region has too few even though the
+        // barcode is now dominant in the frame. Upscale towards a long edge
+        // that is known to work, capped so a tiny crop cannot become a
+        // memory bomb.
+        if let Some((new_w, new_h)) = source::upscale_target(width, height) {
+            luma =
+                image::imageops::resize(&luma, new_w, new_h, image::imageops::FilterType::Lanczos3);
+        }
+    }
+
     let (w, h) = luma.dimensions();
 
     let mut hints = rxing::DecodeHints::default();
@@ -164,12 +185,13 @@ mod component {
 
     /// Decode barcodes from an image.
     #[act_tool(
-        description = "Decode every barcode in an image. Recognises QR, Aztec, PDF417, DataMatrix and the 1D families (EAN-8/13, UPC-A/E, Code 39/93/128, ITF, Codabar). Supply exactly one of `data` or `path`. Retail 1D results also carry a normalised 14-digit `gtin` and `check_digit_valid`.",
+        description = "Decode every barcode in an image. Recognises QR, Aztec, PDF417, DataMatrix and the 1D families (EAN-8/13, UPC-A/E, Code 39/93/128, ITF, Codabar). Supply exactly one of `data` or `path`. An optional `crop` region ([[x1,y1],[x2,y2]] pixel bounds) decodes just that part of the image, upscaling it first if it is small — useful for a small code in a large photo. Retail 1D results also carry a normalised 14-digit `gtin` and `check_digit_valid`.",
         read_only
     )]
     fn decode(#[args] source: Source) -> ActResult<Json<DecodeOutput>> {
+        let crop = source.crop;
         let bytes = source.read()?;
-        Ok(Json(decode_bytes(&bytes)?))
+        Ok(Json(decode_bytes(&bytes, crop)?))
     }
 
     /// Generate a QR code as a PNG.
@@ -211,20 +233,20 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png)
             .unwrap();
 
-        let out = decode_bytes(&png.into_inner()).unwrap();
+        let out = decode_bytes(&png.into_inner(), None).unwrap();
         assert_eq!(out.count, 0);
         assert!(out.results.is_empty());
     }
 
     #[test]
     fn undecodable_bytes_are_invalid_args() {
-        assert!(decode_bytes(b"not an image at all").is_err());
+        assert!(decode_bytes(b"not an image at all", None).is_err());
     }
 
     #[test]
     fn generated_qr_round_trips_through_decode() {
         let png = render_qr("https://actcore.dev", Ecc::M, 8, true, "#000000", "#ffffff").unwrap();
-        let out = decode_bytes(&png).unwrap();
+        let out = decode_bytes(&png, None).unwrap();
         assert_eq!(out.count, 1);
         assert_eq!(out.results[0].format, "QR_CODE");
         assert_eq!(out.results[0].text, "https://actcore.dev");
@@ -233,7 +255,7 @@ mod tests {
     #[test]
     fn round_trips_utf8_payload() {
         let png = render_qr("Привет, мир", Ecc::H, 6, true, "#000000", "#ffffff").unwrap();
-        let out = decode_bytes(&png).unwrap();
+        let out = decode_bytes(&png, None).unwrap();
         assert_eq!(out.results[0].text, "Привет, мир");
     }
 
@@ -247,5 +269,56 @@ mod tests {
         // Beyond the capacity of even a version-40 L QR code.
         let huge = "x".repeat(10_000);
         assert!(render_qr(&huge, Ecc::M, 8, true, "#000000", "#ffffff").is_err());
+    }
+
+    #[test]
+    fn crop_decodes_a_code_pasted_at_a_known_offset() {
+        // A small QR pasted into a much larger blank canvas at a known
+        // offset. Proves `crop` finds it and returns the right payload --
+        // not a claim that the whole-image path would fail to find the same
+        // code (rxing's TryHarder is quite capable), just that `crop` works.
+        let qr_png = render_qr("crop-me", Ecc::M, 4, true, "#000000", "#ffffff").unwrap();
+        let qr_img = image::load_from_memory(&qr_png).unwrap().to_luma8();
+        let (qw, qh) = qr_img.dimensions();
+
+        let (canvas_w, canvas_h) = (qw + 400, qh + 400);
+        let mut canvas = image::GrayImage::from_pixel(canvas_w, canvas_h, image::Luma([255u8]));
+        let (ox, oy) = (200u32, 200u32);
+        image::imageops::replace(&mut canvas, &qr_img, i64::from(ox), i64::from(oy));
+
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageLuma8(canvas)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let bytes = png.into_inner();
+
+        let crop = [
+            [i64::from(ox), i64::from(oy)],
+            [i64::from(ox + qw), i64::from(oy + qh)],
+        ];
+        let out = decode_bytes(&bytes, Some(crop)).unwrap();
+        assert_eq!(out.count, 1);
+        assert_eq!(out.results[0].format, "QR_CODE");
+        assert_eq!(out.results[0].text, "crop-me");
+    }
+
+    #[test]
+    fn crop_box_x2_le_x1_is_invalid_args() {
+        let png = render_qr("x", Ecc::M, 4, true, "#000000", "#ffffff").unwrap();
+        assert!(decode_bytes(&png, Some([[50, 10], [10, 90]])).is_err());
+    }
+
+    #[test]
+    fn crop_box_outside_image_is_invalid_args() {
+        let png = render_qr("x", Ecc::M, 4, true, "#000000", "#ffffff").unwrap();
+        assert!(decode_bytes(&png, Some([[9000, 9000], [9100, 9100]])).is_err());
+    }
+
+    #[test]
+    fn crop_box_degenerate_after_clamp_is_invalid_args() {
+        let png = render_qr("x", Ecc::M, 4, true, "#000000", "#ffffff").unwrap();
+        // x1 == x2 after clamping both to the same in-bounds value is caught
+        // by the same x2 <= x1 guard before clamping is ever applied.
+        assert!(decode_bytes(&png, Some([[10, 10], [10, 20]])).is_err());
     }
 }

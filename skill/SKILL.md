@@ -29,10 +29,12 @@ scanline matcher misreads as a plausible-looking barcode — a false positive
 you won't get from the unmodified photo.
 
 If a large photo comes back with `count: 0` but you can see a code in it,
-crop to the code's region and retry rather than sending the whole frame
-again. A small code in a large frame (roughly under ~10% of the frame area)
-can be missed at full resolution; cropping tighter around it usually
-decodes cleanly.
+pass `crop: [[x1, y1], [x2, y2]]` — the pixel bounds of the code's region —
+and retry, rather than resending the whole frame. `decode` crops to that
+region and upscales it if it's small before decoding, so you only need to
+say roughly where the code is; you don't need to crop or resize the image
+yourself first. A small code in a large frame (roughly under ~10% of the
+frame area) is the case this is for.
 
 ## Reading the result
 
