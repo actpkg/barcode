@@ -8,16 +8,45 @@ component always answers, it just answers with an error. Verified against a
 live `act run --mcp` session for every case below.
 """
 
+import asyncio
 import base64
 import json
+from contextlib import AsyncExitStack
 
 import pytest
+from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
 from fastmcp.exceptions import ToolError
+
+from conftest import CONNECT_TIMEOUT, LOG_FILE
 
 
 def _b(raw: bytes) -> dict:
     """Wrap raw bytes for a JSON transport — see test_decode.py for why."""
     return {"$bytes": base64.b64encode(raw).decode()}
+
+
+@pytest.fixture
+async def ungranted_client(act_command, wasm_path):
+    """A client for the same component started with NO capability grants.
+
+    `client` (from conftest.py) always runs with `--allow wasi:filesystem`,
+    so it cannot exercise "path outside the grant": under that fixture any
+    readable path would be permitted. This fixture is the faithful
+    reproduction of the spec's case — headless `ask` with no grant at all,
+    which degrades to deny per ACT's capability model. Mirrors conftest.py's
+    `client` fixture exactly, minus the grant flags.
+    """
+    transport = StdioTransport(
+        command=act_command[0],
+        args=[*act_command[1:], "run", str(wasm_path), "--mcp"],
+        keep_alive=False,
+        log_file=LOG_FILE,
+    )
+    async with AsyncExitStack() as stack:
+        async with asyncio.timeout(CONNECT_TIMEOUT):
+            connected = await stack.enter_async_context(Client(transport))
+        yield connected
 
 
 async def test_blank_image_is_empty_not_an_error(client):
@@ -38,20 +67,30 @@ async def test_truncated_image_is_rejected(client):
 
 
 async def test_both_sources_is_an_error(client):
-    with pytest.raises(ToolError):
+    with pytest.raises(ToolError, match="not both"):
         await client.call_tool("decode", {"data": _b(b"x"), "path": "/etc/hostname"})
 
 
 async def test_neither_source_is_an_error(client):
-    with pytest.raises(ToolError):
+    with pytest.raises(ToolError, match="provide the image as"):
         await client.call_tool("decode", {})
 
 
 async def test_oversized_payload_is_rejected(client):
-    with pytest.raises(ToolError):
+    with pytest.raises(ToolError, match="Cannot encode as QR"):
         await client.call_tool("generate_qr", {"text": "x" * 10000})
 
 
 async def test_bad_colour_is_rejected(client):
-    with pytest.raises(ToolError):
+    with pytest.raises(ToolError, match="Colour must be #rrggbb"):
         await client.call_tool("generate_qr", {"text": "x", "dark": "red"})
+
+
+async def test_path_outside_grant_is_capability_denied(ungranted_client):
+    # `client` (conftest.py) runs with --allow wasi:filesystem, so it cannot
+    # exercise this case -- any readable path would be permitted under it.
+    # `ungranted_client` starts the same component with no grants at all: the
+    # ask-by-default policy degrades to deny in this headless run, so any
+    # `path` at all is outside the (empty) grant.
+    with pytest.raises(ToolError, match="Permission denied"):
+        await ungranted_client.call_tool("decode", {"path": "/etc/hostname"})

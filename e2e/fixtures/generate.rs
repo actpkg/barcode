@@ -12,7 +12,10 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 //!
 //! Fixtures cover only the symbologies `qrcode` cannot produce — QR itself is
 //! covered by the generate -> decode round-trip test, which needs no fixture.
+//! `multi.png` additionally covers the multi-barcode case: two symbologies
+//! composited onto one canvas.
 
+use image::{GenericImage, GrayImage, Luma};
 use rxing::{BarcodeFormat, MultiFormatWriter, Writer};
 
 fn main() {
@@ -25,13 +28,32 @@ fn main() {
         ("datamatrix", BarcodeFormat::DATA_MATRIX, "ACT DataMatrix payload", 300, 300),
     ];
     let writer = MultiFormatWriter;
-    for (name, format, data, width, height) in cases {
+
+    let encode_gray = |data: &str, format: BarcodeFormat, width: i32, height: i32| -> GrayImage {
         let matrix = writer
             .encode(data, &format, width, height)
-            .unwrap_or_else(|e| panic!("encode {name}: {e:?}"));
+            .unwrap_or_else(|e| panic!("encode {data}: {e:?}"));
         let img: image::DynamicImage = (&matrix).into();
+        img.to_luma8()
+    };
+
+    for (name, format, data, width, height) in &cases {
+        let img = encode_gray(data, *format, *width, *height);
         let path = format!("e2e/fixtures/{name}.png");
-        img.to_luma8().save(&path).unwrap();
+        img.save(&path).unwrap();
         println!("wrote {path}");
     }
+
+    // multi.png: an EAN-13 and a Code 128 stacked vertically on one white
+    // canvas, so `decode` must return both from a single call.
+    let a = encode_gray("4006381333931", BarcodeFormat::EAN_13, 300, 150);
+    let b = encode_gray("ACT-CODE-128", BarcodeFormat::CODE_128, 400, 150);
+    let (aw, ah) = (a.width(), a.height());
+    let (bw, bh) = (b.width(), b.height());
+    let gap = 40;
+    let mut canvas = GrayImage::from_pixel(aw.max(bw) + 40, ah + bh + gap + 40, Luma([255u8]));
+    canvas.copy_from(&a, 20, 20).unwrap();
+    canvas.copy_from(&b, 20, 20 + ah + gap).unwrap();
+    canvas.save("e2e/fixtures/multi.png").unwrap();
+    println!("wrote e2e/fixtures/multi.png");
 }

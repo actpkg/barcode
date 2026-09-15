@@ -70,3 +70,18 @@ async def test_two_d_formats_have_no_gtin(client):
     res = await client.call_tool("decode", {"data": _b(data)})
     r = _results(res.content)["results"][0]
     assert "gtin" not in r
+
+
+async def test_multiple_barcodes_are_all_returned(client):
+    # An EAN-13 and a Code 128 stacked on one canvas. rxing does not promise
+    # an order for multi-barcode results, so compare as a set of
+    # (format, text) pairs rather than indexing into `results`.
+    data = (FIXTURES / "multi.png").read_bytes()
+    res = await client.call_tool("decode", {"data": _b(data)})
+    out = _results(res.content)
+    assert out["count"] == 2
+    found = {(r["format"], r["text"]) for r in out["results"]}
+    assert found == {
+        ("EAN_13", "4006381333931"),
+        ("CODE_128", "ACT-CODE-128"),
+    }
