@@ -1,5 +1,11 @@
 use act_sdk::prelude::*;
 
+// `Source` is unused until Task 4 wires it into the `decode` tool.
+#[allow(dead_code)]
+mod source;
+#[allow(unused_imports)]
+use source::Source;
+
 #[act_component]
 mod component {
     use super::*;
