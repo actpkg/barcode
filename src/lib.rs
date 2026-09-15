@@ -5,6 +5,9 @@ use act_sdk::prelude::*;
 mod source;
 #[allow(unused_imports)]
 use source::Source;
+// `normalise` is unused until Task 4 calls it per decoded result.
+#[allow(dead_code)]
+mod gtin;
 
 #[act_component]
 mod component {
