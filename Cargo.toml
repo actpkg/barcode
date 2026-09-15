@@ -1,0 +1,35 @@
+[package]
+name = "component-barcode"
+description = "Decode barcodes (QR, Aztec, PDF417, DataMatrix, EAN/UPC) and generate QR codes as PNG"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+act-sdk = "0.14"
+serde = { version = "1", features = ["derive"] }
+schemars = "1"
+
+# `encoding_rs` is NOT optional: without it `CharacterSet::decode` does not
+# exist and the DataMatrix/PDF417 decoders fail to compile.
+# rxing's own `image` feature stays OFF: it pins `image = "=0.25.8"`.
+rxing = { version = "0.9", default-features = false, features = [
+  "aztec", "datamatrix", "oned", "pdf417", "qrcode",
+  "decoders", "multi_barcode_readers", "encoding_rs",
+] }
+
+# Defaults pull in `rayon` (no threads under wasip2) and `avif` (C deps).
+image = { version = "0.25", default-features = false, features = [
+  "png", "jpeg", "gif", "bmp", "tiff", "webp",
+] }
+
+qrcode = { version = "0.14", default-features = false, features = ["image"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+opt-level = "z"
+panic = "abort"
+
+[lib]
+crate-type = ["cdylib"]

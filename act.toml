@@ -1,0 +1,14 @@
+[std]
+name = "barcode"
+
+# Read-only by design: the component only ever opens an image for reading.
+# Declaring `ro` here caps every grant — no policy can give this component
+# write access. `wasi:http` and `wasi:sockets` are deliberately absent, so they
+# are denied unconditionally: a malformed image that corrupts the decoder still
+# cannot reach the network.
+[std.capabilities."wasi:filesystem"]
+description = "Read image files from disk when a `path` source is used. Never written to."
+
+[[std.capabilities."wasi:filesystem".allow]]
+path = "**"
+mode = "ro"

@@ -1,0 +1,9 @@
+_commit: 0.11.0
+_src_path: templates/act-template-rust
+component_ref: actpkg.dev/library/barcode
+description: Decode barcodes (QR, Aztec, PDF417, DataMatrix, EAN/UPC) and generate
+    QR codes as PNG
+needs_filesystem: true
+needs_http: false
+needs_sockets: false
+project_name: barcode
