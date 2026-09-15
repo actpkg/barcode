@@ -84,6 +84,80 @@ pub fn decode_bytes(bytes: &[u8]) -> ActResult<DecodeOutput> {
     })
 }
 
+/// Error-correction level. Higher levels survive more damage but hold less data.
+#[derive(Deserialize, JsonSchema, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Ecc {
+    /// ~7% recovery.
+    L,
+    /// ~15% recovery (default).
+    M,
+    /// ~25% recovery.
+    Q,
+    /// ~30% recovery.
+    H,
+}
+
+impl From<Ecc> for qrcode::EcLevel {
+    fn from(e: Ecc) -> Self {
+        match e {
+            Ecc::L => qrcode::EcLevel::L,
+            Ecc::M => qrcode::EcLevel::M,
+            Ecc::Q => qrcode::EcLevel::Q,
+            Ecc::H => qrcode::EcLevel::H,
+        }
+    }
+}
+
+/// Parse `#rrggbb` into an opaque RGBA pixel.
+fn parse_colour(s: &str) -> ActResult<image::Rgba<u8>> {
+    let hex = s.strip_prefix('#').unwrap_or(s);
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ActError::invalid_args(format!(
+            "Colour must be #rrggbb, got {s:?}"
+        )));
+    }
+    let n = u32::from_str_radix(hex, 16)
+        .map_err(|e| ActError::invalid_args(format!("Cannot parse colour {s:?}: {e}")))?;
+    Ok(image::Rgba([
+        ((n >> 16) & 0xff) as u8,
+        ((n >> 8) & 0xff) as u8,
+        (n & 0xff) as u8,
+        0xff,
+    ]))
+}
+
+/// Render a QR code to PNG bytes.
+pub fn render_qr(
+    text: &str,
+    ecc: Ecc,
+    scale: u32,
+    quiet_zone: bool,
+    dark: &str,
+    light: &str,
+) -> ActResult<Vec<u8>> {
+    let dark = parse_colour(dark)?;
+    let light = parse_colour(light)?;
+    let scale = scale.clamp(1, 64);
+
+    let code = qrcode::QrCode::with_error_correction_level(text, ecc.into())
+        .map_err(|e| ActError::invalid_args(format!("Cannot encode as QR: {e}")))?;
+
+    let img = code
+        .render::<image::Rgba<u8>>()
+        .module_dimensions(scale, scale)
+        .quiet_zone(quiet_zone)
+        .dark_color(dark)
+        .light_color(light)
+        .build();
+
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .map_err(|e| ActError::internal(format!("Cannot encode PNG: {e}")))?;
+    Ok(png.into_inner())
+}
+
 #[act_component]
 mod component {
     use super::*;
@@ -96,6 +170,31 @@ mod component {
     fn decode(#[args] source: Source) -> ActResult<Json<DecodeOutput>> {
         let bytes = source.read()?;
         Ok(Json(decode_bytes(&bytes)?))
+    }
+
+    /// Generate a QR code as a PNG.
+    #[act_tool(
+        description = "Generate a QR code from text and return it as a PNG image. The QR version is chosen automatically to fit the payload.",
+        read_only
+    )]
+    fn generate_qr(
+        #[doc = "Text to encode"] text: String,
+        #[doc = "Error-correction level: l, m (default), q, h"] ecc: Option<Ecc>,
+        #[doc = "Module size in pixels (default 8, clamped to 1..=64)"] scale: Option<u32>,
+        #[doc = "Include the surrounding quiet zone (default true; scanners need it)"]
+        quiet_zone: Option<bool>,
+        #[doc = "Foreground colour as #rrggbb (default #000000)"] dark: Option<String>,
+        #[doc = "Background colour as #rrggbb (default #ffffff)"] light: Option<String>,
+    ) -> ActResult<Content> {
+        let png = render_qr(
+            &text,
+            ecc.unwrap_or(Ecc::M),
+            scale.unwrap_or(8),
+            quiet_zone.unwrap_or(true),
+            dark.as_deref().unwrap_or("#000000"),
+            light.as_deref().unwrap_or("#ffffff"),
+        )?;
+        Ok(Content("image/png", png))
     }
 }
 
@@ -120,5 +219,33 @@ mod tests {
     #[test]
     fn undecodable_bytes_are_invalid_args() {
         assert!(decode_bytes(b"not an image at all").is_err());
+    }
+
+    #[test]
+    fn generated_qr_round_trips_through_decode() {
+        let png = render_qr("https://actcore.dev", Ecc::M, 8, true, "#000000", "#ffffff").unwrap();
+        let out = decode_bytes(&png).unwrap();
+        assert_eq!(out.count, 1);
+        assert_eq!(out.results[0].format, "QR_CODE");
+        assert_eq!(out.results[0].text, "https://actcore.dev");
+    }
+
+    #[test]
+    fn round_trips_utf8_payload() {
+        let png = render_qr("Привет, мир", Ecc::H, 6, true, "#000000", "#ffffff").unwrap();
+        let out = decode_bytes(&png).unwrap();
+        assert_eq!(out.results[0].text, "Привет, мир");
+    }
+
+    #[test]
+    fn rejects_a_bad_colour() {
+        assert!(render_qr("x", Ecc::M, 8, true, "not-a-colour", "#ffffff").is_err());
+    }
+
+    #[test]
+    fn rejects_an_oversized_payload() {
+        // Beyond the capacity of even a version-40 L QR code.
+        let huge = "x".repeat(10_000);
+        assert!(render_qr(&huge, Ecc::M, 8, true, "#000000", "#ffffff").is_err());
     }
 }
