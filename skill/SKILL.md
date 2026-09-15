@@ -23,6 +23,17 @@ Generation is QR only.
 
 Accepted image formats: PNG, JPEG, GIF, BMP, TIFF, WebP.
 
+Pass the original image rather than a pre-processed one. Aggressive
+autocontrast or sharpening can turn photo noise into edge patterns that a 1D
+scanline matcher misreads as a plausible-looking barcode — a false positive
+you won't get from the unmodified photo.
+
+If a large photo comes back with `count: 0` but you can see a code in it,
+crop to the code's region and retry rather than sending the whole frame
+again. A small code in a large frame (roughly under ~10% of the frame area)
+can be missed at full resolution; cropping tighter around it usually
+decodes cleanly.
+
 ## Reading the result
 
 ```json

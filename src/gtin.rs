@@ -30,7 +30,23 @@ pub fn normalise(format: &BarcodeFormat, text: &str) -> Option<Gtin> {
     if !text.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    // GTIN-8/12/13/14 are the only defined widths.
+
+    // UPC-E is a *compressed* 8-digit form, not a truncated GTIN: turning it
+    // into a GTIN needs the GS1 expansion table, not zero-padding. Padding
+    // silently produces the wrong 14-digit number for a different product,
+    // and a passing check digit on that wrong number actively conceals it
+    // (zero-padding can't disturb a mod-10 checksum, so the UPC-E's own
+    // valid check digit survives onto the wrong GTIN).
+    if *format == BarcodeFormat::UPC_E {
+        let upca = expand_upc_e(text)?;
+        let gtin = format!("{upca:0>14}");
+        return Some(Gtin {
+            check_digit_valid: check_digit_valid(&gtin),
+            gtin,
+        });
+    }
+
+    // GTIN-8/12/13/14 are the only defined widths for the remaining carriers.
     if !matches!(text.len(), 8 | 12 | 13 | 14) {
         return None;
     }
@@ -40,6 +56,29 @@ pub fn normalise(format: &BarcodeFormat, text: &str) -> Option<Gtin> {
         check_digit_valid: check_digit_valid(&gtin),
         gtin,
     })
+}
+
+/// Expand a UPC-E payload (number system + 6 compressed digits + check
+/// digit) to the 12-digit UPC-A it stands for, per the GS1 rule table keyed
+/// on the last of the six payload digits. Returns `None` unless the payload
+/// is exactly 8 digits — anything else cannot be a UPC-E at all.
+fn expand_upc_e(text: &str) -> Option<String> {
+    if text.len() != 8 {
+        return None;
+    }
+    let ns = &text[0..1];
+    let d = &text[1..7]; // six compressed payload digits, itself indexable by d[i..j]
+    let check = &text[7..8];
+    let last = &d[5..6];
+
+    let (manufacturer, item) = match last {
+        "0" | "1" | "2" => (format!("{}{last}00", &d[0..2]), format!("00{}", &d[2..5])),
+        "3" => (format!("{}00", &d[0..3]), format!("000{}", &d[3..5])),
+        "4" => (format!("{}0", &d[0..4]), format!("0000{}", &d[4..5])),
+        _ => (d[0..5].to_string(), format!("0000{last}")),
+    };
+
+    Some(format!("{ns}{manufacturer}{item}{check}"))
 }
 
 /// Mod-10: weight the 13 digits before the check digit 3,1,3,1,… from the
@@ -93,5 +132,29 @@ mod tests {
     #[test]
     fn non_numeric_has_no_gtin() {
         assert!(normalise(&BarcodeFormat::CODE_128, "ABC-123").is_none());
+    }
+
+    #[test]
+    fn upce_expands_via_gs1_rules_not_zero_padding() {
+        // A real Procter & Gamble code. Zero-padding this 8-digit UPC-E would
+        // give 00000004252614 -- a different product's GTIN.
+        let g = normalise(&BarcodeFormat::UPC_E, "04252614").unwrap();
+        assert_eq!(g.gtin, "00042100005264");
+        assert!(g.check_digit_valid);
+    }
+
+    #[test]
+    fn upce_expands_second_vector() {
+        let g = normalise(&BarcodeFormat::UPC_E, "01234565").unwrap();
+        assert_eq!(g.gtin, "00012345000065");
+        assert!(g.check_digit_valid);
+    }
+
+    #[test]
+    fn upce_wrong_width_has_no_gtin() {
+        // UPC-E is always exactly 8 digits (number system + 6 compressed +
+        // check); anything else cannot be expanded and must not be mangled.
+        assert!(normalise(&BarcodeFormat::UPC_E, "0123456").is_none());
+        assert!(normalise(&BarcodeFormat::UPC_E, "012345678").is_none());
     }
 }
