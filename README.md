@@ -49,6 +49,6 @@ One-time setup: create a Personal Access Token at
 just publish   # local publish (unsigned); CI signs on push to main
 ```
 
-## Licence
+## License
 
 MIT OR Apache-2.0

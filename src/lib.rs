@@ -101,7 +101,7 @@ pub fn decode_bytes(bytes: &[u8], crop: Option<[[i64; 2]; 2]>) -> ActResult<Deco
         .map(|r| {
             let format = r.getBarcodeFormat();
             let text = r.getText().to_string();
-            let g = gtin::normalise(format, &text);
+            let g = gtin::normalize(format, &text);
             DecodedBarcode {
                 format: format!("{format:?}"),
                 text,
@@ -148,15 +148,15 @@ impl From<Ecc> for qrcode::EcLevel {
 }
 
 /// Parse `#rrggbb` into an opaque RGBA pixel.
-fn parse_colour(s: &str) -> ActResult<image::Rgba<u8>> {
+fn parse_color(s: &str) -> ActResult<image::Rgba<u8>> {
     let hex = s.strip_prefix('#').unwrap_or(s);
     if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(ActError::invalid_args(format!(
-            "Colour must be #rrggbb, got {s:?}"
+            "Color must be #rrggbb, got {s:?}"
         )));
     }
     let n = u32::from_str_radix(hex, 16)
-        .map_err(|e| ActError::invalid_args(format!("Cannot parse colour {s:?}: {e}")))?;
+        .map_err(|e| ActError::invalid_args(format!("Cannot parse color {s:?}: {e}")))?;
     Ok(image::Rgba([
         ((n >> 16) & 0xff) as u8,
         ((n >> 8) & 0xff) as u8,
@@ -174,8 +174,8 @@ pub fn render_qr(
     dark: &str,
     light: &str,
 ) -> ActResult<Vec<u8>> {
-    let dark = parse_colour(dark)?;
-    let light = parse_colour(light)?;
+    let dark = parse_color(dark)?;
+    let light = parse_color(light)?;
     let scale = scale.clamp(1, 64);
 
     let code = qrcode::QrCode::with_error_correction_level(text, ecc.into())
@@ -202,7 +202,7 @@ mod component {
 
     /// Decode barcodes from an image.
     #[act_tool(
-        description = "Decode every barcode in an image. Recognises QR, Aztec, PDF417, DataMatrix and the 1D families (EAN-8/13, UPC-A/E, Code 39/93/128, ITF, Codabar). Supply exactly one of `data` or `path`. An optional `crop` region ([[x1,y1],[x2,y2]] pixel bounds) decodes just that part of the image, upscaling it first if it is small — useful for a small code in a large photo. Retail 1D results also carry a normalised 14-digit `gtin` and `check_digit_valid`.",
+        description = "Decode every barcode in an image. Recognizes QR, Aztec, PDF417, DataMatrix and the 1D families (EAN-8/13, UPC-A/E, Code 39/93/128, ITF, Codabar). Supply exactly one of `data` or `path`. An optional `crop` region ([[x1,y1],[x2,y2]] pixel bounds) decodes just that part of the image, upscaling it first if it is small — useful for a small code in a large photo. Retail 1D results also carry a normalized 14-digit `gtin` and `check_digit_valid`.",
         read_only
     )]
     fn decode(#[args] source: Source) -> ActResult<Json<DecodeOutput>> {
@@ -222,8 +222,8 @@ mod component {
         #[doc = "Module size in pixels (default 8, clamped to 1..=64)"] scale: Option<u32>,
         #[doc = "Include the surrounding quiet zone (default true; scanners need it)"]
         quiet_zone: Option<bool>,
-        #[doc = "Foreground colour as #rrggbb (default #000000)"] dark: Option<String>,
-        #[doc = "Background colour as #rrggbb (default #ffffff)"] light: Option<String>,
+        #[doc = "Foreground color as #rrggbb (default #000000)"] dark: Option<String>,
+        #[doc = "Background color as #rrggbb (default #ffffff)"] light: Option<String>,
     ) -> ActResult<Content> {
         let png = render_qr(
             &text,
@@ -277,8 +277,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_bad_colour() {
-        assert!(render_qr("x", Ecc::M, 8, true, "not-a-colour", "#ffffff").is_err());
+    fn rejects_a_bad_color() {
+        assert!(render_qr("x", Ecc::M, 8, true, "not-a-color", "#ffffff").is_err());
     }
 
     #[test]

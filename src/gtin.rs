@@ -1,4 +1,4 @@
-//! GTIN normalisation for 1D retail symbologies.
+//! GTIN normalization for 1D retail symbologies.
 //!
 //! Agents routinely get this wrong — UPC-A is not an EAN-13 by truncation —
 //! so the component does it once, here.
@@ -15,7 +15,7 @@ pub struct Gtin {
 /// Returns `None` for any format that is not a GTIN carrier, or whose payload
 /// is not a plausible GTIN. A bad check digit is reported, not suppressed:
 /// the caller asked what the image says.
-pub fn normalise(format: &BarcodeFormat, text: &str) -> Option<Gtin> {
+pub fn normalize(format: &BarcodeFormat, text: &str) -> Option<Gtin> {
     let carries_gtin = matches!(
         format,
         BarcodeFormat::EAN_8
@@ -105,47 +105,47 @@ mod tests {
 
     #[test]
     fn ean13_pads_to_fourteen() {
-        let g = normalise(&BarcodeFormat::EAN_13, "4006381333931").unwrap();
+        let g = normalize(&BarcodeFormat::EAN_13, "4006381333931").unwrap();
         assert_eq!(g.gtin, "04006381333931");
         assert!(g.check_digit_valid);
     }
 
     #[test]
     fn upca_pads_to_fourteen() {
-        let g = normalise(&BarcodeFormat::UPC_A, "036000291452").unwrap();
+        let g = normalize(&BarcodeFormat::UPC_A, "036000291452").unwrap();
         assert_eq!(g.gtin, "00036000291452");
         assert!(g.check_digit_valid);
     }
 
     #[test]
     fn bad_check_digit_is_reported_not_rejected() {
-        let g = normalise(&BarcodeFormat::EAN_13, "4006381333930").unwrap();
+        let g = normalize(&BarcodeFormat::EAN_13, "4006381333930").unwrap();
         assert_eq!(g.gtin, "04006381333930");
         assert!(!g.check_digit_valid);
     }
 
     #[test]
     fn two_d_formats_have_no_gtin() {
-        assert!(normalise(&BarcodeFormat::QR_CODE, "4006381333931").is_none());
+        assert!(normalize(&BarcodeFormat::QR_CODE, "4006381333931").is_none());
     }
 
     #[test]
     fn non_numeric_has_no_gtin() {
-        assert!(normalise(&BarcodeFormat::CODE_128, "ABC-123").is_none());
+        assert!(normalize(&BarcodeFormat::CODE_128, "ABC-123").is_none());
     }
 
     #[test]
     fn upce_expands_via_gs1_rules_not_zero_padding() {
         // A real Procter & Gamble code. Zero-padding this 8-digit UPC-E would
         // give 00000004252614 -- a different product's GTIN.
-        let g = normalise(&BarcodeFormat::UPC_E, "04252614").unwrap();
+        let g = normalize(&BarcodeFormat::UPC_E, "04252614").unwrap();
         assert_eq!(g.gtin, "00042100005264");
         assert!(g.check_digit_valid);
     }
 
     #[test]
     fn upce_expands_second_vector() {
-        let g = normalise(&BarcodeFormat::UPC_E, "01234565").unwrap();
+        let g = normalize(&BarcodeFormat::UPC_E, "01234565").unwrap();
         assert_eq!(g.gtin, "00012345000065");
         assert!(g.check_digit_valid);
     }
@@ -154,7 +154,7 @@ mod tests {
     fn upce_wrong_width_has_no_gtin() {
         // UPC-E is always exactly 8 digits (number system + 6 compressed +
         // check); anything else cannot be expanded and must not be mangled.
-        assert!(normalise(&BarcodeFormat::UPC_E, "0123456").is_none());
-        assert!(normalise(&BarcodeFormat::UPC_E, "012345678").is_none());
+        assert!(normalize(&BarcodeFormat::UPC_E, "0123456").is_none());
+        assert!(normalize(&BarcodeFormat::UPC_E, "012345678").is_none());
     }
 }

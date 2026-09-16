@@ -13,7 +13,7 @@ def _b(raw: bytes) -> dict:
     """Wrap raw bytes in the canonical envelope for a JSON transport.
 
     Passing a `bytes` object straight through fails inside the MCP client:
-    pydantic serialises the request with `mode="json"` and raises
+    pydantic serializes the request with `mode="json"` and raises
     UnicodeDecodeError on the first non-UTF-8 byte (a PNG starts with 0x89).
     ACT-SPEC's `{"$bytes": "<base64>"}` envelope is the wire form.
     """
@@ -58,7 +58,7 @@ async def test_ean13_carries_gtin14(client):
     assert r["check_digit_valid"] is True
 
 
-async def test_upca_normalises_to_gtin14(client):
+async def test_upca_normalizes_to_gtin14(client):
     data = (FIXTURES / "upca.png").read_bytes()
     res = await client.call_tool("decode", {"data": _b(data)})
     r = _results(res.content)["results"][0]

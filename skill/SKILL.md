@@ -9,7 +9,7 @@ metadata:
 
 Decodes barcodes from raster images and generates QR codes.
 
-Recognised on decode: QR, Aztec, PDF417, DataMatrix, and the 1D families —
+Recognized on decode: QR, Aztec, PDF417, DataMatrix, and the 1D families —
 EAN-8, EAN-13, UPC-A, UPC-E, Code 39, Code 93, Code 128, ITF and Codabar.
 Generation is QR only.
 
@@ -51,7 +51,7 @@ frame area) is the case this is for.
 `count: 0` is a successful answer — the image had no barcode — not an error.
 
 For retail 1D symbologies the result also carries `gtin`, the payload
-normalised to 14 digits, and `check_digit_valid`. Use `gtin` when looking a
+normalized to 14 digits, and `check_digit_valid`. Use `gtin` when looking a
 product up: a UPC-A is not an EAN-13 with a digit removed, and comparing the
 raw `text` across symbologies will miss matches. A `false` check digit means
 the image decoded cleanly but the number is not a valid GTIN — usually a

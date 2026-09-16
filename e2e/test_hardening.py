@@ -1,4 +1,4 @@
-"""The component's ceiling and its behaviour on hostile input.
+"""The component's ceiling and its behavior on hostile input.
 
 A tool-level failure surfaces through fastmcp's client as `ToolError` (raised
 from a `CallToolResult` whose `isError` is true), not as `mcp.shared.
@@ -94,8 +94,8 @@ async def test_oversized_payload_is_rejected(client):
         await client.call_tool("generate_qr", {"text": "x" * 10000})
 
 
-async def test_bad_colour_is_rejected(client):
-    with pytest.raises(ToolError, match="Colour must be #rrggbb"):
+async def test_bad_color_is_rejected(client):
+    with pytest.raises(ToolError, match="Color must be #rrggbb"):
         await client.call_tool("generate_qr", {"text": "x", "dark": "red"})
 
 
