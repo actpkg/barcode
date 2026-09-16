@@ -21,7 +21,7 @@ Generation is QR only.
 - `path` — a file on the host. Needs a `wasi:filesystem` read grant covering
   that path; without one the call fails with `capability_denied`.
 
-Accepted image formats: PNG, JPEG, GIF, BMP, TIFF, WebP.
+Accepted image formats: PNG, JPEG, GIF, BMP, TIFF, WebP, JPEG XL.
 
 Pass the original image rather than a pre-processed one. Aggressive
 autocontrast or sharpening can turn photo noise into edge patterns that a 1D

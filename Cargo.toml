@@ -24,6 +24,15 @@ image = { version = "0.25", default-features = false, features = [
 
 qrcode = { version = "0.14", default-features = false, features = ["image"] }
 
+# JPEG XL input support. Registers a decoding hook into `image`, so
+# `image::load_from_memory` handles `.jxl` transparently -- no new decode
+# branch. Their own default `all-simd` pulls in x86/ARM-specific SIMD
+# (avx/avx512/neon/sse42), none of it meaningful for wasm32-wasip2; kept off
+# in favour of the portable scalar path, matching every other dependency
+# here.
+jxl = { version = "0.7", default-features = false }
+jxl-image-rs-integration = { version = "0.7", default-features = false }
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

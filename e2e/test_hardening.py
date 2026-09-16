@@ -11,6 +11,7 @@ live `act run --mcp` session for every case below.
 import asyncio
 import base64
 import json
+import pathlib
 from contextlib import AsyncExitStack
 
 import pytest
@@ -19,6 +20,8 @@ from fastmcp.client.transports import StdioTransport
 from fastmcp.exceptions import ToolError
 
 from conftest import CONNECT_TIMEOUT, LOG_FILE
+
+FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 
 
 def _b(raw: bytes) -> dict:
@@ -64,6 +67,16 @@ async def test_blank_image_is_empty_not_an_error(client):
 async def test_truncated_image_is_rejected(client):
     with pytest.raises(ToolError):
         await client.call_tool("decode", {"data": _b(b"\x89PNG\r\n\x1a\ntruncated")})
+
+
+async def test_truncated_jxl_is_rejected(client):
+    # Cut a real, valid .jxl file in half. Verified live before writing
+    # this test that libjxl's own error path surfaces cleanly through
+    # `image::load_from_memory` as std:invalid-args, not a panic.
+    data = (FIXTURES / "src_qr.jxl").read_bytes()
+    truncated = data[: len(data) // 2]
+    with pytest.raises(ToolError, match="Cannot decode image"):
+        await client.call_tool("decode", {"data": _b(truncated)})
 
 
 async def test_both_sources_is_an_error(client):

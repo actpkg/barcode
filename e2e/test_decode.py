@@ -98,6 +98,30 @@ async def test_multiple_barcodes_are_all_returned(client):
     }
 
 
+async def test_decodes_lossless_jxl(client):
+    # `src_ean13.jxl`: libjxl, -distance 0 (lossless, Modular codestream).
+    # Proves .jxl input reaches the barcode decoder end-to-end over the
+    # real MCP transport, not just through the in-process unit test.
+    data = (FIXTURES / "src_ean13.jxl").read_bytes()
+    res = await client.call_tool("decode", {"data": _b(data)})
+    out = _results(res.content)
+    assert out["count"] == 1
+    assert out["results"][0]["format"] == "EAN_13"
+    assert out["results"][0]["text"] == "4006381333931"
+
+
+async def test_decodes_lossy_jxl(client):
+    # `lossy_qr.jxl`: libjxl, -distance 1.5 (lossy VarDCT codestream) --
+    # a different code path through the decoder than the lossless Modular
+    # fixture above, so both are covered rather than just one.
+    data = (FIXTURES / "lossy_qr.jxl").read_bytes()
+    res = await client.call_tool("decode", {"data": _b(data)})
+    out = _results(res.content)
+    assert out["count"] == 1
+    assert out["results"][0]["format"] == "QR_CODE"
+    assert out["results"][0]["text"] == "badge-crop-test"
+
+
 async def test_crop_finds_a_small_code_in_a_large_frame(client):
     """Small code, large frame -- the case `crop` exists for.
 

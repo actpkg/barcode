@@ -34,11 +34,28 @@ pub struct Corner {
     pub y: f32,
 }
 
+/// Register JPEG XL support with the `image` crate, once.
+///
+/// `jxl-image-rs-integration` works by installing a decoding hook into
+/// `image` itself, so after this call `image::load_from_memory` below
+/// transparently handles `.jxl` — no separate decode branch needed. The
+/// registration function returns `false` on every call after the first;
+/// that's an ordinary, harmless result, not a signal to stop calling it, so
+/// this only exists to avoid redoing the (cheap but pointless) work on
+/// every decode.
+fn ensure_jxl_registered() {
+    static REGISTERED: std::sync::Once = std::sync::Once::new();
+    REGISTERED.call_once(|| {
+        jxl_image_rs_integration::register_image_decoding_hook();
+    });
+}
+
 /// Decode every barcode in an already-read image, optionally restricted to a
 /// `[[x1,y1],[x2,y2]]` pixel region. A small cropped region is upscaled
 /// before decoding — see [`source::upscale_target`] for why a bare crop is
 /// not enough on its own.
 pub fn decode_bytes(bytes: &[u8], crop: Option<[[i64; 2]; 2]>) -> ActResult<DecodeOutput> {
+    ensure_jxl_registered();
     let img = image::load_from_memory(bytes)
         .map_err(|e| ActError::invalid_args(format!("Cannot decode image: {e}")))?;
 
@@ -320,5 +337,29 @@ mod tests {
         // x1 == x2 after clamping both to the same in-bounds value is caught
         // by the same x2 <= x1 guard before clamping is ever applied.
         assert!(decode_bytes(&png, Some([[10, 10], [10, 20]])).is_err());
+    }
+
+    #[test]
+    fn decodes_a_lossless_jxl() {
+        // A real JPEG XL file (libjxl, -distance 0 / lossless), not a PNG
+        // relabelled: this is what proves the registration hook actually
+        // reaches `image::load_from_memory`, not just that JXL bytes exist.
+        let jxl = include_bytes!("../e2e/fixtures/src_qr.jxl");
+        let out = decode_bytes(jxl, None).unwrap();
+        assert_eq!(out.count, 1);
+        assert_eq!(out.results[0].format, "QR_CODE");
+        assert_eq!(out.results[0].text, "badge-crop-test");
+    }
+
+    #[test]
+    fn png_still_decodes_after_jxl_registration() {
+        // The hook registers globally into the `image` crate; this proves
+        // it doesn't shadow or otherwise break the PNG path it shares
+        // `load_from_memory` with. Runs after the JXL test above in the
+        // same process, which is exactly the ordering that would expose a
+        // regression here.
+        let png = render_qr("still-png", Ecc::M, 4, true, "#000000", "#ffffff").unwrap();
+        let out = decode_bytes(&png, None).unwrap();
+        assert_eq!(out.results[0].text, "still-png");
     }
 }
