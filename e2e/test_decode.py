@@ -96,3 +96,34 @@ async def test_multiple_barcodes_are_all_returned(client):
         ("EAN_13", "4006381333931"),
         ("CODE_128", "ACT-CODE-128"),
     }
+
+
+async def test_crop_finds_a_small_code_in_a_large_frame(client):
+    """Small code, large frame -- the case `crop` exists for.
+
+    `large_frame_small_code.png` is synthetic, not a real photo: a real
+    conference-badge photo of this exact scenario (1920x2560, QR at ~8% of
+    frame, occupying ~557px on the long edge) could not be committed --
+    it is a personal photo of a real person's contact details, and the
+    repo is destined for a public registry. This fixture reproduces the
+    *geometry* instead: a 264px QR (within the 235-423px range measured
+    across real badge photos that decoded) pasted into a 1920x2560 white
+    canvas at a known offset, so `crop` has the same small-code-in-a-
+    large-frame shape to work with.
+
+    Unlike the real photo, this synthetic frame decodes even WITHOUT
+    `crop` -- a clean QR on white is an easier target than one photographed
+    on a lanyard, so this test does not assert `count: 0` for the
+    whole-frame case (verified live against the real photo during
+    development: it does return `count: 0` there, but that fixture is not
+    committed). What this test pins is the half that generalises: `crop`
+    around the known offset finds the code and returns its payload.
+    """
+    data = (FIXTURES / "large_frame_small_code.png").read_bytes()
+    res = await client.call_tool(
+        "decode", {"data": _b(data), "crop": [[860, 1150], [1124, 1414]]}
+    )
+    out = _results(res.content)
+    assert out["count"] == 1
+    assert out["results"][0]["format"] == "QR_CODE"
+    assert out["results"][0]["text"] == "badge-crop-test"

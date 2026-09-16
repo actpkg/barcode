@@ -67,12 +67,22 @@ pub fn resolve_crop(crop: [[i64; 2]; 2], img_w: u32, img_h: u32) -> ActResult<Cr
 /// Measured against a real phone photo (1920x2560, QR at ~8% of frame): a
 /// bare crop (557px long edge) does not decode; upscaling the same crop to
 /// an 800px long edge does. The root cause is pixels-per-module, not frame
-/// size, so 1024 gives margin over the measured 800px threshold rather than
-/// sitting right at it. This is not an edge case: across a batch of real
-/// conference-badge photos, every QR that decoded occupied only 235-423px on
-/// the long edge — well below 557 — so the auto-upscale is not a nicety, it
-/// is what makes `crop` decode this kind of input at all.
-const UPSCALE_TARGET: u32 = 1024;
+/// size. This is not an edge case: across a batch of real conference-badge
+/// photos, every QR that decoded occupied only 235-423px on the long edge —
+/// well below 557 — so the auto-upscale is not a nicety, it is what makes
+/// `crop` decode this kind of input at all.
+///
+/// 1024 was the first target tried and was not enough: a vision agent's box
+/// is an estimate, not a measurement, and a generously-padded box is the
+/// realistic case, not the exception. On the same real photo, a box padded
+/// +50% around the code (1113px long edge) is already past 1024, so
+/// `upscale_target` applied *no* upscale at all and reproduced the original
+/// too-few-pixels-per-module failure. 2000 was measured to fix every box
+/// tried on that photo — exact, +20%, +50%, shifted 40px, and cropped 10%
+/// short — while the 4x/4096px caps below still hold: an 87px box still
+/// stops at the 4x ceiling (348px, no memory blowup), and a full 2560px
+/// frame is still left alone at 1x.
+const UPSCALE_TARGET: u32 = 2000;
 const UPSCALE_MAX_FACTOR: u32 = 4;
 const UPSCALE_MAX_EDGE: u32 = 4096;
 
@@ -186,20 +196,31 @@ mod tests {
 
     #[test]
     fn upscale_target_leaves_large_regions_alone() {
-        assert_eq!(upscale_target(1200, 800), None);
+        assert_eq!(upscale_target(2200, 1800), None);
     }
 
     #[test]
-    fn upscale_target_grows_a_small_region_towards_1024() {
+    fn upscale_target_grows_a_small_region_towards_2000() {
         let (w, h) = upscale_target(557, 486).unwrap();
-        assert_eq!(w.max(h), 1024);
+        assert_eq!(w.max(h), 2000);
         // Aspect ratio preserved (within integer rounding).
         assert!((w as f64 / h as f64 - 557.0 / 486.0).abs() < 0.01);
     }
 
     #[test]
+    fn upscale_target_still_reaches_a_generously_padded_box() {
+        // The real-world case this target was raised for: a vision agent's
+        // box is an estimate, and a box padded well past the code itself is
+        // the realistic case. +50% padding around the 557px code that
+        // motivated this module gives ~1113px -- still under 2000, so it
+        // must still upscale rather than falling through as "already large
+        // enough" the way it did under the old 1024 target.
+        assert!(upscale_target(1113, 971).is_some());
+    }
+
+    #[test]
     fn upscale_target_caps_the_factor_at_4x() {
-        // A 10x10 region would need 102x to reach 1024 -- capped at 4x
+        // A 10x10 region would need 200x to reach 2000 -- capped at 4x
         // (40px) instead, so a tiny crop cannot become a memory bomb.
         let (w, h) = upscale_target(10, 10).unwrap();
         assert_eq!((w, h), (40, 40));
@@ -207,12 +228,13 @@ mod tests {
 
     #[test]
     fn upscale_target_never_exceeds_the_absolute_cap() {
-        // Given the "only upscale below 1024" guard and the 4x factor cap,
-        // the largest possible result is 1023*4 = 4092 -- always under the
-        // 4096 absolute cap, but the cap is checked independently as a
-        // second line of defence rather than relying on that arithmetic
-        // holding forever.
-        for edge in [1, 100, 557, 1023] {
+        // Given the "only upscale below 2000" guard and the 4x factor cap,
+        // the largest possible result is exactly 2000 (a region at or past
+        // 500px reaches the 2000 target without needing the full 4x), always
+        // under the 4096 absolute cap -- but the cap is checked
+        // independently as a second line of defence rather than relying on
+        // that arithmetic holding forever.
+        for edge in [1, 100, 557, 1113, 1999] {
             let (w, h) = upscale_target(edge, edge).unwrap();
             assert!(w.max(h) <= 4096, "edge {edge} produced {w}x{h}");
         }

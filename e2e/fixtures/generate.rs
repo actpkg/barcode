@@ -20,6 +20,16 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 //! (`NotFoundException`), an aliasing artifact of that exact aspect ratio
 //! against UPC-E's much narrower 51-module symbol (vs EAN-13's 95).
 //! 255x150, 400x200 and 153x80 all decode correctly; measured, not guessed.
+//!
+//! `large_frame_small_code.png` is not produced by this script (it uses the
+//! `qrcode` crate's `module_dimensions`/`quiet_zone` builder, which this
+//! `MultiFormatWriter`-based generator does not have a matching knob for).
+//! It is a small QR (264px, via `qrcode::QrCode::render().module_dimensions
+//! (8, 8).quiet_zone(true)`) encoding `"badge-crop-test"`, pasted with
+//! `image::imageops::replace` into a 1920x2560 white canvas at (860, 1150).
+//! It exists to test `decode`'s `crop` argument on a small-code-in-a-
+//! large-frame shape without committing a real photo — see `test_decode.py`
+//! for why a genuine photo of this scenario could not be used.
 
 use image::{GenericImage, GrayImage, Luma};
 use rxing::{BarcodeFormat, MultiFormatWriter, Writer};
