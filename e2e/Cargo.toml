@@ -1,0 +1,19 @@
+[package]
+name = "e2e-barcode"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Detach from any outer workspace this component may sit in.
+[workspace]
+
+[dev-dependencies]
+rmcp = { version = "3.5", features = ["client", "transport-child-process"] }
+# No `net`: barcode touches no network — there is no stub server to bind.
+# `process` runs `act`, `io-util` reads its stderr; `time` bounds the
+# stderr-poll helper.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time"] }
+serde_json = "1"
+# Decoding the ImageContent block's base64 back to PNG bytes (already in the
+# tree as an rmcp transitive dep, so this adds no new versions).
+base64 = "0.23"

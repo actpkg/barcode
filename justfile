@@ -26,11 +26,11 @@ build:
 pack:
     {{actbuild}} pack {{wasm}}
 
-# Drives the component through `act run --mcp` with a real MCP client, so the
-# tests observe what an agent observes. Capability grants live in
-# e2e/conftest.py, not here.
+# Drives the component through `act run --mcp` with a real MCP client (rmcp),
+# so the tests observe what an agent observes. Capability grants live in
+# e2e/tests/e2e.rs (`act_command`), not here.
 test: build
-    ACT="{{act}}" uv run --project e2e pytest e2e/ -v
+    cd e2e && ACT="{{act}}" WASM="../{{wasm}}" cargo test
 
 publish: build
     #!/usr/bin/env bash
