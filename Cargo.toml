@@ -30,7 +30,7 @@ qrcode = { version = "0.14", default-features = false, features = ["image"] }
 # (avx/avx512/neon/sse42), none of it meaningful for wasm32-wasip2; kept off
 # in favour of the portable scalar path, matching every other dependency
 # here.
-jxl = { version = "0.7", default-features = false }
+jxl = { version = "0.8", default-features = false }
 jxl-image-rs-integration = { version = "0.7", default-features = false }
 
 [profile.release]
